@@ -29,6 +29,7 @@ const unsigned S3FanoutManager::kDefault429ThrottleMs = 250;
 const unsigned S3FanoutManager::kMax429ThrottleMs = 10000;
 const unsigned S3FanoutManager::kThrottleReportIntervalSec = 10;
 const unsigned S3FanoutManager::kDefaultHTTPPort = 80;
+const unsigned S3FanoutManager::kMaxMultiDeleteReqLen = 100;
 
 
 /**
@@ -272,6 +273,10 @@ void *S3FanoutManager::MainUpload(void *data) {
         LogCvmfs(kLogS3Fanout, kLogStderr, "Error, timeout due to: %d", retval);
         assert(retval == CURLM_OK);
       }
+      // TODO(jpriessn): find a better place where to call FlushDeleteJobs
+      // maybe inside S3Uploader::WaitForUpload()
+      // Flush delete jobs if there is nothing else to do
+      s3fanout_mgr->FlushDeleteJobs();
     } else if (retval < 0) {
       assert(errno == EINTR);
       continue;
@@ -286,35 +291,40 @@ void *S3FanoutManager::MainUpload(void *data) {
       s3fanout_mgr->watch_fds_[1].revents = 0;
       JobInfo *info;
       ReadPipe(s3fanout_mgr->pipe_jobs_[0], &info, sizeof(info));
-      CURL *handle = s3fanout_mgr->AcquireCurlHandle();
-      if (handle == NULL) {
-        LogCvmfs(kLogS3Fanout, kLogStderr, "Failed to acquire CURL handle.");
-        assert(handle != NULL);
-      }
-      s3fanout::Failures init_failure =
-        s3fanout_mgr->InitializeRequest(info, handle);
-      if (init_failure != s3fanout::kFailOk) {
-        LogCvmfs(kLogS3Fanout, kLogStderr,
-                "Failed to initialize CURL handle (error: %d - %s | errno: %d)",
-                 init_failure, Code2Ascii(init_failure), errno);
-        abort();
-      }
-      s3fanout_mgr->SetUrlOptions(info);
+      if(info->request == JobInfo::kReqDelete) {
+        LogCvmfs(kLogS3Fanout, kLogDebug,
+          "Adding delete job to queue");
+        s3fanout_mgr->QueueDeleteJob(info);
+      } else {
+        CURL *handle = s3fanout_mgr->AcquireCurlHandle();
+        if (handle == NULL) {
+          LogCvmfs(kLogS3Fanout, kLogStderr, "Failed to acquire CURL handle.");
+          assert(handle != NULL);
+        }
+        s3fanout::Failures init_failure =
+          s3fanout_mgr->InitializeRequest(info, handle);
+        if (init_failure != s3fanout::kFailOk) {
+          LogCvmfs(kLogS3Fanout, kLogStderr,
+            "Failed to initialize CURL handle (error: %d - %s | errno: %d)",
+            init_failure, Code2Ascii(init_failure), errno);
+          abort();
+        }
+        s3fanout_mgr->SetUrlOptions(info);
 
-      curl_multi_add_handle(s3fanout_mgr->curl_multi_, handle);
-      s3fanout_mgr->active_requests_->insert(info);
-      jobs_in_flight++;
-      int still_running = 0, retval = 0;
-      retval = curl_multi_socket_action(s3fanout_mgr->curl_multi_,
-                                        CURL_SOCKET_TIMEOUT,
-                                        0,
-                                        &still_running);
+        curl_multi_add_handle(s3fanout_mgr->curl_multi_, handle);
+        s3fanout_mgr->active_requests_->insert(info);
+        jobs_in_flight++;
+        int still_running = 0, retval = 0;
+        retval = curl_multi_socket_action(s3fanout_mgr->curl_multi_,
+                                          CURL_SOCKET_TIMEOUT,
+                                          0,
+                                          &still_running);
 
-      LogCvmfs(kLogS3Fanout, kLogDebug,
-               "curl_multi_socket_action: %d - %d",
-               retval, still_running);
+        LogCvmfs(kLogS3Fanout, kLogDebug,
+                "curl_multi_socket_action: %d - %d",
+                retval, still_running);
+      }
     }
-
 
     // Activity on curl sockets
     // Within this loop the curl_multi_socket_action() may cause socket(s)
@@ -374,8 +384,12 @@ void *S3FanoutManager::MainUpload(void *data) {
         s3fanout_mgr->ReleaseCurlHandle(info, easy_handle);
         s3fanout_mgr->available_jobs_->Decrement();
 
-        MutexLockGuard m(s3fanout_mgr->jobs_completed_lock_);
-        s3fanout_mgr->jobs_completed_.push_back(info);
+        if (info->request == JobInfo::kReqDeleteMulti) {
+          s3fanout_mgr->OnMultiDeleteRequestFinish(info);
+        } else {
+          MutexLockGuard m(s3fanout_mgr->jobs_completed_lock_);
+          s3fanout_mgr->jobs_completed_.push_back(info);
+        }
       }
     }
   }
@@ -392,6 +406,59 @@ void *S3FanoutManager::MainUpload(void *data) {
 
   LogCvmfs(kLogS3Fanout, kLogDebug, "Upload I/O thread terminated");
   return NULL;
+}
+
+bool S3FanoutManager::QueueDeleteJob(JobInfo *info) {
+  jobs_to_delete_.push_back(info);
+  if(jobs_to_delete_.size() == kMaxMultiDeleteReqLen) {
+    FlushDeleteJobs();
+  }
+  return true;
+}
+
+void S3FanoutManager::FlushDeleteJobs() {
+  if (jobs_to_delete_.size() == 0)
+    return;
+
+  string reqBody = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+  reqBody += "<Delete>\n";
+  reqBody += "<Quiet>true</Quiet>\n";
+
+  for (vector<JobInfo*>::iterator it = jobs_to_delete_.begin();
+       it != jobs_to_delete_.end(); ++it) {
+    reqBody += "<Object>\n";
+    reqBody += "<Key>" + (*it)->object_key + "</Key>\n";
+    reqBody += "</Object>\n";
+  }
+
+  reqBody += "</Delete>\n";
+  unsigned char *buffer =
+    reinterpret_cast<unsigned char*>(smalloc(reqBody.length()));
+  memcpy(buffer, reqBody.data(), reqBody.length());
+
+  JobInfo *multiInfo = new s3fanout::JobInfo("?delete", NULL, NULL,
+                                             buffer, reqBody.length());
+  multiInfo->request = JobInfo::kReqDeleteMulti;
+
+  multi_delete_bodies_[multiInfo] = buffer;
+  jobs_deleting_[multiInfo] = std::vector<JobInfo *>(jobs_to_delete_);
+  jobs_to_delete_.clear();
+  PushNewJob(multiInfo);
+}
+
+void S3FanoutManager::OnMultiDeleteRequestFinish(JobInfo *multiInfo) {
+  {
+    MutexLockGuard m(jobs_completed_lock_);
+    for (vector<JobInfo*>::iterator it = jobs_deleting_[multiInfo].begin();
+         it != jobs_deleting_[multiInfo].end(); ++it) {
+      jobs_completed_.push_back(*it);
+      available_jobs_->Decrement();
+    }
+  }
+  jobs_deleting_.erase(multiInfo);
+  free(multi_delete_bodies_[multiInfo]);
+  multi_delete_bodies_.erase(multiInfo);
+  delete multiInfo;
 }
 
 
@@ -599,10 +666,19 @@ bool S3FanoutManager::MkV4Authz(const JobInfo &info, vector<string> *headers)
                  (string("/") + info.object_key) :
                  (string("/") + bucket_ + "/" + info.object_key);
 
+  tokens.clear();
+  // resource in token[0], subresources in token[1..]
+  tokens = SplitString(uri, '?');
+
+  // currently works with only 1 subresource specified (?delete)
+  string subresource = "";
+  if (tokens.size() > 1)
+    subresource = string(tokens[1]) + "=";
+
   string canonical_request =
     GetRequestString(info) + "\n" +
-    GetUriEncode(uri, false) + "\n" +
-    "\n" +
+    GetUriEncode(tokens[0], false) + "\n" +
+    subresource + "\n" +
     canonical_headers + "\n" +
     signed_headers + "\n" +
     payload_hash;
@@ -744,7 +820,7 @@ bool S3FanoutManager::MkPayloadHash(const JobInfo &info, string *hex_hash)
     return true;
   }
 
-  // PUT, there is actually payload
+  // PUT or POST, there is actually payload
   shash::Any payload_hash(shash::kMd5);
   bool retval;
 
@@ -828,6 +904,8 @@ string S3FanoutManager::GetRequestString(const JobInfo &info) const {
       return "PUT";
     case JobInfo::kReqDelete:
       return "DELETE";
+    case JobInfo::kReqDeleteMulti:
+      return "POST";
     default:
       abort();
   }
@@ -839,6 +917,7 @@ string S3FanoutManager::GetContentType(const JobInfo &info) const {
     case JobInfo::kReqHeadOnly:
     case JobInfo::kReqHeadPut:
     case JobInfo::kReqDelete:
+    case JobInfo::kReqDeleteMulti:
       return "";
     case JobInfo::kReqPutCas:
       return "application/octet-stream";
@@ -893,8 +972,14 @@ Failures S3FanoutManager::InitializeRequest(JobInfo *info, CURL *handle) const {
       assert(retval == CURLE_OK);
     }
   } else {
-    retval = curl_easy_setopt(handle, CURLOPT_CUSTOMREQUEST, NULL);
-    assert(retval == CURLE_OK);
+    if (info->request == JobInfo::kReqDeleteMulti) {
+      retval = curl_easy_setopt(handle, CURLOPT_CUSTOMREQUEST,
+                                GetRequestString(*info).c_str());
+      assert(retval == CURLE_OK);
+    } else {
+      retval = curl_easy_setopt(handle, CURLOPT_CUSTOMREQUEST, NULL);
+      assert(retval == CURLE_OK);
+    }
     retval = curl_easy_setopt(handle, CURLOPT_UPLOAD, 1);
     assert(retval == CURLE_OK);
     retval = curl_easy_setopt(handle, CURLOPT_NOBODY, 0);

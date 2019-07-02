@@ -103,6 +103,7 @@ struct JobInfo {
     kReqPutCas,  // immutable data object
     kReqPutDotCvmfs,  // one of the /.cvmfs... top level files
     kReqDelete,
+    kReqDeleteMulti,
   };
 
   Origin origin;
@@ -205,6 +206,7 @@ class S3FanoutManager : SingleCopy {
   // Report throttle operations only every so often
   static const unsigned kThrottleReportIntervalSec;
   static const unsigned kDefaultHTTPPort;
+  static const unsigned kMaxMultiDeleteReqLen;
 
   static void DetectThrottleIndicator(const std::string &header, JobInfo *info);
 
@@ -233,6 +235,8 @@ class S3FanoutManager : SingleCopy {
   void PushNewJob(JobInfo *info);
   int PopCompletedJobs(std::vector<s3fanout::JobInfo*> *jobs);
 
+  void FlushDeleteJobs();
+
   const Statistics &GetStatistics();
   void SetTimeout(const unsigned seconds);
   void GetTimeout(unsigned *seconds);
@@ -251,9 +255,16 @@ class S3FanoutManager : SingleCopy {
   static void *MainUpload(void *data);
   std::vector<s3fanout::JobInfo*> jobs_todo_;
   pthread_mutex_t *jobs_todo_lock_;
+  std::vector<s3fanout::JobInfo*> jobs_to_delete_;
+  // Maps a list of single delete jobs to an ongoing multi-delete job
+  std::map<s3fanout::JobInfo*, std::vector<s3fanout::JobInfo*> > jobs_deleting_;
+  std::map<s3fanout::JobInfo*, unsigned char *> multi_delete_bodies_;
   std::vector<s3fanout::JobInfo*> jobs_completed_;
   pthread_mutex_t *jobs_completed_lock_;
   pthread_mutex_t *curl_handle_lock_;
+
+  bool QueueDeleteJob(JobInfo *info);
+  void OnMultiDeleteRequestFinish(JobInfo *info);
 
   CURL *AcquireCurlHandle() const;
   void ReleaseCurlHandle(JobInfo *info, CURL *handle) const;
