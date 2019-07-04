@@ -1385,7 +1385,7 @@ void S3FanoutManager::Init(const unsigned int max_pool_handles) {
   pool_max_handles_ = max_pool_handles;
   watch_fds_max_ = 4 * pool_max_handles_;
 
-  max_available_jobs_ = 4 * pool_max_handles_;
+  max_available_jobs_ = 400 * pool_max_handles_;
   available_jobs_ = new Semaphore(max_available_jobs_);
   assert(NULL != available_jobs_);
 
