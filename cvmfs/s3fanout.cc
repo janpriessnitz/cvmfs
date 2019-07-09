@@ -253,8 +253,12 @@ void *S3FanoutManager::MainUpload(void *data) {
   unsigned jobs_in_flight = 0;
 
   while (true) {
-    // Check events with 1ms timeout
-    int timeout = 1;
+    // Check events with 100ms default timeout or timeout suggested by curl
+    int timeout = 100;
+    int64_t curl_timeout;
+    curl_multi_timeout(s3fanout_mgr->curl_multi_, &curl_timeout);
+    if (curl_timeout > 0)
+      timeout = curl_timeout;
     int retval = poll(s3fanout_mgr->watch_fds_, s3fanout_mgr->watch_fds_inuse_,
                       timeout);
     if (retval == 0) {
