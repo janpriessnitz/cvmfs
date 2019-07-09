@@ -32,6 +32,7 @@ S3Uploader::S3Uploader(const SpoolerDefinition &spooler_definition)
   , timeout_sec_(kDefaultTimeoutSec)
   , authz_method_(s3fanout::kAuthzAwsV2)
   , peek_before_put_(true)
+  , multi_delete_max_len_(0)
   , temporary_path_(spooler_definition.temporary_path)
 {
   assert(spooler_definition.IsValid() &&
@@ -55,6 +56,7 @@ S3Uploader::S3Uploader(const SpoolerDefinition &spooler_definition)
   s3fanout_mgr_->SetTimeout(timeout_sec_);
   s3fanout_mgr_->SetRetryParameters(
     num_retries_, kDefaultBackoffInitMs, kDefaultBackoffMaxMs);
+  s3fanout_mgr_->SetMultiDeleteMaxLen(multi_delete_max_len_);
   s3fanout_mgr_->Spawn();
 
   int retval = pthread_create(
@@ -150,6 +152,9 @@ bool S3Uploader::ParseSpoolerDefinition(
   }
   if (options_manager.GetValue("CVMFS_S3_PEEK_BEFORE_PUT", &parameter)) {
     peek_before_put_ = options_manager.IsOn(parameter);
+  }
+  if (options_manager.GetValue("CVMFS_S3_MULTI_DELETE_MAX_LEN", &parameter)) {
+    multi_delete_max_len_ = String2Uint64(parameter);
   }
 
   return true;

@@ -29,7 +29,7 @@ const unsigned S3FanoutManager::kDefault429ThrottleMs = 250;
 const unsigned S3FanoutManager::kMax429ThrottleMs = 10000;
 const unsigned S3FanoutManager::kThrottleReportIntervalSec = 10;
 const unsigned S3FanoutManager::kDefaultHTTPPort = 80;
-const unsigned S3FanoutManager::kMaxMultiDeleteReqLen = 100;
+const unsigned S3FanoutManager::kMaxMultiDeleteReqLen = 1000;
 
 
 /**
@@ -291,7 +291,8 @@ void *S3FanoutManager::MainUpload(void *data) {
       s3fanout_mgr->watch_fds_[1].revents = 0;
       JobInfo *info;
       ReadPipe(s3fanout_mgr->pipe_jobs_[0], &info, sizeof(info));
-      if(info->request == JobInfo::kReqDelete) {
+      if (info->request == JobInfo::kReqDelete &&
+         s3fanout_mgr->opt_multi_delete_max_len_ > 0) {
         LogCvmfs(kLogS3Fanout, kLogDebug,
           "Adding delete job to queue");
         s3fanout_mgr->QueueDeleteJob(info);
@@ -410,7 +411,7 @@ void *S3FanoutManager::MainUpload(void *data) {
 
 bool S3FanoutManager::QueueDeleteJob(JobInfo *info) {
   jobs_to_delete_.push_back(info);
-  if(jobs_to_delete_.size() == kMaxMultiDeleteReqLen) {
+  if (jobs_to_delete_.size() >= opt_multi_delete_max_len_) {
     FlushDeleteJobs();
   }
   return true;
@@ -1351,6 +1352,7 @@ S3FanoutManager::S3FanoutManager(const std::string access_key,
   opt_backoff_init_ms_ = 0;
   opt_backoff_max_ms_ = 0;
   opt_ipv4_only_ = false;
+  opt_multi_delete_max_len_ = 0;
 
   max_available_jobs_ = 0;
   thread_upload_ = 0;
@@ -1525,6 +1527,18 @@ void S3FanoutManager::SetRetryParameters(const unsigned max_retries,
   opt_max_retries_ = max_retries;
   opt_backoff_init_ms_ = backoff_init_ms;
   opt_backoff_max_ms_ = backoff_max_ms;
+}
+
+void S3FanoutManager::SetMultiDeleteMaxLen(const unsigned len) {
+  if (len > kMaxMultiDeleteReqLen) return;
+  MutexLockGuard m(lock_options_);
+  opt_multi_delete_max_len_ = len;
+}
+
+void S3FanoutManager::GetMultiDeleteMaxLen(unsigned *len)
+{
+  MutexLockGuard m(lock_options_);
+  *len = opt_multi_delete_max_len_;
 }
 
 /**

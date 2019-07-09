@@ -206,6 +206,7 @@ class S3FanoutManager : SingleCopy {
   // Report throttle operations only every so often
   static const unsigned kThrottleReportIntervalSec;
   static const unsigned kDefaultHTTPPort;
+  // Maximum number of objects per multi-delete request according to specs
   static const unsigned kMaxMultiDeleteReqLen;
 
   static void DetectThrottleIndicator(const std::string &header, JobInfo *info);
@@ -243,6 +244,8 @@ class S3FanoutManager : SingleCopy {
   void SetRetryParameters(const unsigned max_retries,
                           const unsigned backoff_init_ms,
                           const unsigned backoff_max_ms);
+  void SetMultiDeleteMaxLen(const unsigned len);
+  void GetMultiDeleteMaxLen(unsigned *len);
 
  private:
   // Reflects the default Apache configuration of the local backend
@@ -345,6 +348,9 @@ class S3FanoutManager : SingleCopy {
   unsigned opt_backoff_init_ms_;
   unsigned opt_backoff_max_ms_;
   bool opt_ipv4_only_;
+  // Maximum number of objects to delete with single multi-delete request
+  // Multi-delete requests turned off if set to 0
+  unsigned opt_multi_delete_max_len_;
 
   unsigned int max_available_jobs_;
   Semaphore *available_jobs_;
