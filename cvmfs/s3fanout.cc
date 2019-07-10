@@ -546,7 +546,7 @@ bool S3FanoutManager::MkV2Authz(const JobInfo &info, vector<string> *headers)
   const
 {
   string payload_hash;
-  bool retval = MkPayloadHash(info, &payload_hash);
+  bool retval = MkMD5PayloadHash(info, &payload_hash);
   if (!retval)
     return false;
   string content_type = GetContentType(info);
@@ -636,7 +636,7 @@ bool S3FanoutManager::MkV4Authz(const JobInfo &info, vector<string> *headers)
   const
 {
   string payload_hash;
-  bool retval = MkPayloadHash(info, &payload_hash);
+  bool retval = MkSHA256PayloadHash(info, &payload_hash);
   if (!retval)
     return false;
   string content_type = GetContentType(info);
@@ -650,6 +650,13 @@ bool S3FanoutManager::MkV4Authz(const JobInfo &info, vector<string> *headers)
 
   string signed_headers;
   string canonical_headers;
+  if (info.request == JobInfo::kReqDeleteMulti) {
+    string md5_hash;
+    MkMD5PayloadHash(info, &md5_hash);
+    signed_headers += "content-md5;";
+    headers->push_back("Content-MD5: " + md5_hash);
+    canonical_headers += "content-md5:" + md5_hash + "\n";
+  }
   if (!content_type.empty()) {
     signed_headers += "content-type;";
     headers->push_back("Content-Type: " + content_type);
@@ -798,26 +805,14 @@ int S3FanoutManager::InitializeDnsSettings(
   return 0;
 }
 
-
-bool S3FanoutManager::MkPayloadHash(const JobInfo &info, string *hex_hash)
+bool S3FanoutManager::MkMD5PayloadHash(const JobInfo &info, string *hex_hash)
   const
 {
   if ((info.request == JobInfo::kReqHeadOnly) ||
-      (info.request == JobInfo::kReqHeadPut) ||
-      (info.request == JobInfo::kReqDelete))
+    (info.request == JobInfo::kReqHeadPut) ||
+    (info.request == JobInfo::kReqDelete))
   {
-    switch (authz_method_) {
-      case kAuthzAwsV2:
-        hex_hash->clear();
-        break;
-      case kAuthzAwsV4:
-        // Sha256 over empty string
-        *hex_hash =
-          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
-        break;
-      default:
-        abort();
-    }
+    hex_hash->clear();
     return true;
   }
 
@@ -827,47 +822,58 @@ bool S3FanoutManager::MkPayloadHash(const JobInfo &info, string *hex_hash)
 
   switch (info.origin) {
     case kOriginMem:
-      switch (authz_method_) {
-        case kAuthzAwsV2:
-          shash::HashMem(info.origin_mem.data, info.origin_mem.size,
-                         &payload_hash);
-          *hex_hash =
-            Base64(string(reinterpret_cast<char *>(payload_hash.digest),
-                          payload_hash.GetDigestSize()));
-          return true;
-        case kAuthzAwsV4:
-          *hex_hash =
-            shash::Sha256Mem(info.origin_mem.data, info.origin_mem.size);
-          return true;
-        default:
-          abort();
-      }
+      shash::HashMem(info.origin_mem.data, info.origin_mem.size,
+                      &payload_hash);
+      *hex_hash =
+        Base64(string(reinterpret_cast<char *>(payload_hash.digest),
+                      payload_hash.GetDigestSize()));
+      return true;
     case kOriginPath:
-      switch (authz_method_) {
-        case kAuthzAwsV2:
-          retval = shash::HashFile(info.origin_path, &payload_hash);
-          if (!retval) {
-            LogCvmfs(kLogS3Fanout, kLogStderr,
-                     "failed to hash file %s (errno: %d)",
-                     info.origin_path.c_str(), errno);
-            return false;
-          }
-          *hex_hash =
-            Base64(string(reinterpret_cast<char *>(payload_hash.digest),
-                          payload_hash.GetDigestSize()));
-          return true;
-        case kAuthzAwsV4:
-          *hex_hash = shash::Sha256File(info.origin_path);
-          if (hex_hash->empty()) {
-            LogCvmfs(kLogS3Fanout, kLogStderr,
-                     "failed to hash file %s (errno: %d)",
-                     info.origin_path.c_str(), errno);
-            return false;
-          }
-          return true;
-        default:
-          abort();
+      retval = shash::HashFile(info.origin_path, &payload_hash);
+      if (!retval) {
+        LogCvmfs(kLogS3Fanout, kLogStderr,
+                  "failed to hash file %s (errno: %d)",
+                  info.origin_path.c_str(), errno);
+        return false;
       }
+      *hex_hash =
+        Base64(string(reinterpret_cast<char *>(payload_hash.digest),
+                      payload_hash.GetDigestSize()));
+      return true;
+    default:
+      abort();
+  }
+}
+
+bool S3FanoutManager::MkSHA256PayloadHash(const JobInfo &info,
+                                          string *hex_hash) const
+{
+  if ((info.request == JobInfo::kReqHeadOnly) ||
+    (info.request == JobInfo::kReqHeadPut) ||
+    (info.request == JobInfo::kReqDelete))
+  {
+    *hex_hash =
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    return true;
+  }
+
+  // PUT or POST, there is actually payload
+  shash::Any payload_hash(shash::kMd5);
+
+  switch (info.origin) {
+    case kOriginMem:
+      *hex_hash =
+        shash::Sha256Mem(info.origin_mem.data, info.origin_mem.size);
+      return true;
+    case kOriginPath:
+      *hex_hash = shash::Sha256File(info.origin_path);
+      if (hex_hash->empty()) {
+        LogCvmfs(kLogS3Fanout, kLogStderr,
+                  "failed to hash file %s (errno: %d)",
+                  info.origin_path.c_str(), errno);
+        return false;
+      }
+      return true;
     default:
       abort();
   }
