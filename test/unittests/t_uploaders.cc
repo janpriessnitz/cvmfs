@@ -433,7 +433,7 @@ class T_Uploaders : public FileSandbox {
       do {
         int n = read(accept_sockfd, buf, 1);
         ASSERT_EQ(n, 1);
-        if (strncmp(buf, "\n\r\n\r", 4) == 0 ||
+        if (strncmp(buf, "\r\n\r\n", 4) == 0 ||
             strncmp(buf, "\n\n", 2) == 0) {
           break;
         }
