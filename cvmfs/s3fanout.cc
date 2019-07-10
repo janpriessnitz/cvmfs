@@ -163,8 +163,13 @@ static size_t CallbackCurlData(void *ptr, size_t size, size_t nmemb,
  * For the time being, ignore all received information in the HTTP body
  */
 static size_t CallbackCurlBody(
-  char * /*ptr*/, size_t size, size_t nmemb, void * /*userdata*/)
+  char *data, size_t size, size_t nmemb, void *info_link)
 {
+  JobInfo *info = static_cast<JobInfo *>(info_link);
+  info->response_body.append(data, size*nmemb);
+  LogCvmfs(kLogS3Fanout, kLogDebug, "Recieved %d bytes of response body",
+           size*nmemb);
+
   return size * nmemb;
 }
 
@@ -448,6 +453,19 @@ void S3FanoutManager::FlushDeleteJobs() {
 }
 
 void S3FanoutManager::OnMultiDeleteRequestFinish(JobInfo *multiInfo) {
+  // Fill out error codes for single delete jobs
+  s3fanout::Failures error_code = s3fanout::kFailOk;
+  if (multiInfo->error_code != s3fanout::kFailOk) {
+    error_code = multiInfo->error_code;
+  } else if (multiInfo->response_body.find("<Error>") != string::npos) {
+    error_code = s3fanout::kFailOther;
+    LogCvmfs(kLogS3Fanout, kLogStderr,
+      "Failed to delete one or more objects in a multi-delete request");
+  }
+  for (vector<JobInfo*>::iterator it = jobs_deleting_[multiInfo].begin();
+      it != jobs_deleting_[multiInfo].end(); ++it) {
+    (*it)->error_code = error_code;
+  }
   {
     MutexLockGuard m(jobs_completed_lock_);
     for (vector<JobInfo*>::iterator it = jobs_deleting_[multiInfo].begin();
@@ -1050,6 +1068,9 @@ Failures S3FanoutManager::InitializeRequest(JobInfo *info, CURL *handle) const {
                             static_cast<void *>(info));
   assert(retval == CURLE_OK);
   retval = curl_easy_setopt(handle, CURLOPT_READDATA,
+                            static_cast<void *>(info));
+  assert(retval == CURLE_OK);
+  retval = curl_easy_setopt(handle, CURLOPT_WRITEDATA,
                             static_cast<void *>(info));
   assert(retval == CURLE_OK);
   retval = curl_easy_setopt(handle, CURLOPT_HTTPHEADER, info->http_headers);

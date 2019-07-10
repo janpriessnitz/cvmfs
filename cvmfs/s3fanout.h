@@ -117,6 +117,7 @@ struct JobInfo {
   const std::string origin_path;
   void *callback;  // Callback to be called when job is finished
   MemoryMappedFile *mmf;
+  std::string response_body;
 
   // One constructor per destination
   JobInfo(
