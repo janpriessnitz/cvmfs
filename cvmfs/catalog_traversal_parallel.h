@@ -221,7 +221,7 @@ class CatalogTraversalParallel : public CatalogTraversal<ObjectFetcherT> {
       if (pre_job_queue_.empty()) {
         return NULL;
       }
-      CatalogJob *result = pre_job_queue_.front();
+      CatalogJob *result = pre_job_queue_.top();
       pre_job_queue_.pop();
       return result;
     } else {
@@ -314,7 +314,7 @@ class CatalogTraversalParallel : public CatalogTraversal<ObjectFetcherT> {
     }
   }
 
-  std::queue<CatalogJob *> pre_job_queue_;
+  std::stack<CatalogJob *> pre_job_queue_;
   std::queue<CatalogJob *> post_job_queue_;
   pthread_mutex_t job_queue_lock_;
 
