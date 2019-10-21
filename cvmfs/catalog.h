@@ -21,6 +21,7 @@
 #include "hash.h"
 #include "shortstring.h"
 #include "sql.h"
+#include "smallhash.h"
 #include "uid_map.h"
 #include "xattr.h"
 
@@ -94,6 +95,7 @@ class Catalog : SingleCopy {
   friend class swissknife::CommandMigrate;  // for catalog version migration
 
  public:
+  typedef SmallHashDynamic<shash::Any, bool> HashSet;
   typedef std::vector<shash::Any> HashVector;
 
   /**

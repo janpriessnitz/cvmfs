@@ -35,12 +35,6 @@
 
 namespace glue {
 
-static inline uint32_t hasher_md5(const shash::Md5 &key) {
-  // Don't start with the first bytes, because == is using them as well
-  return (uint32_t) *(reinterpret_cast<const uint32_t *>(key.digest) + 1);
-}
-
-
 static inline uint32_t hasher_inode(const uint64_t &inode) {
   return MurmurHash2(&inode, sizeof(inode), 0x07387a4f);
 }
@@ -178,7 +172,7 @@ class PathStore {
 
 
   PathStore() {
-    map_.Init(16, shash::Md5(shash::AsciiPtr("!")), hasher_md5);
+    map_.Init(16, shash::Md5(shash::AsciiPtr("!")), map_.hasher_any);
     string_heap_ = new StringHeap();
   }
 
@@ -309,7 +303,7 @@ class PathStore {
 class PathMap {
  public:
   PathMap() {
-    map_.Init(16, shash::Md5(shash::AsciiPtr("!")), hasher_md5);
+    map_.Init(16, shash::Md5(shash::AsciiPtr("!")), map_.hasher_any);
   }
 
   bool LookupPath(const shash::Md5 &md5path, PathString *path) {
