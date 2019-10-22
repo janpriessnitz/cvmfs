@@ -466,10 +466,44 @@ const Catalog::HashVector& Catalog::GetReferencedObjects() const {
     return referenced_hashes_;
   }
 
-  // retrieve all referenced content hashes of both files and file chunks
+  SmallHashDynamic<shash::Md5, bool> external_paths;
+  
+  shash::Md5 empty_md5;
+  empty_md5.SetNull();
+  external_paths.Init(64, empty_md5, external_paths.hasher_md5);
+  SqlListExternalPathHashes list_external_paths(database());
+  while (list_external_paths.FetchRow()) {
+    external_paths.Insert(list_external_paths.GetPathHash(), true);
+  }
+
+  // typedef SmallHashDynamic<shash::Any, bool> HashSet;
+  SmallHashDynamic<shash::Any, bool> hash_set;
+  shash::Any empty_any;
+  empty_any.SetNull();
+  hash_set.Init(64, empty_any, hash_set.hasher_any);
+
+  // retrieve all referenced content hashes of files
   SqlListContentHashes list_content_hashes(database());
   while (list_content_hashes.FetchRow()) {
-    referenced_hashes_.push_back(list_content_hashes.GetHash());
+    // Discard external files
+    if (!external_paths.Contains(list_content_hashes.GetPathHash())) {
+      hash_set.Insert(list_content_hashes.GetHash(), true);
+    }
+  }
+
+  // retrieve all referenced content hashes of file chunks
+  SqlListChunkHashes list_chunk_hashes(database());
+  while (list_chunk_hashes.FetchRow()) {
+    // Discard external files
+    if (!external_paths.Contains(list_chunk_hashes.GetPathHash())) {
+      hash_set.Insert(list_chunk_hashes.GetHash(), true);
+    }
+  }
+
+  for (uint32_t i = 0; i < hash_set.capacity(); ++i) {
+    if (hash_set.keys()[i] != hash_set.empty_key()) {
+      referenced_hashes_.push_back(hash_set.keys()[i]);
+    }
   }
 
   return referenced_hashes_;

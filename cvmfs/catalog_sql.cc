@@ -580,22 +580,14 @@ bool SqlDirentWrite::BindDirentFields(const int hash_idx,
 
 SqlListContentHashes::SqlListContentHashes(const CatalogDatabase &database) {
   static const char *stmt_lt_2_4 =
-      "SELECT hash, flags, 0 "
+      "SELECT hash, flags, md5path_1, md5path_2"
       "  FROM catalog "
       "  WHERE length(hash) > 0;";
 
   static const char *stmt_ge_2_4 =
-      "SELECT hash, flags, 0 "
+      "SELECT hash, flags, md5path_1, md5path_2"
       "  FROM catalog "
-      "  WHERE (length(catalog.hash) > 0) AND "
-      "        ((flags & 128) = 0) "  // kFlagFileExternal
-      "UNION "
-      "SELECT chunks.hash, catalog.flags, 1 "
-      "  FROM catalog "
-      "  LEFT JOIN chunks "
-      "  ON catalog.md5path_1 = chunks.md5path_1 AND "
-      "     catalog.md5path_2 = chunks.md5path_2 "
-      "  WHERE (catalog.flags & 128) = 0;";  // kFlagFileExternal
+      "  WHERE length(hash) > 0;";
 
   if (database.schema_version() < 2.4-CatalogDatabase::kSchemaEpsilon) {
     DeferredInit(database.sqlite_db(), stmt_lt_2_4);
@@ -609,11 +601,55 @@ shash::Any SqlListContentHashes::GetHash() const {
   const unsigned int      db_flags       = RetrieveInt(1);
   const shash::Algorithms hash_algorithm = RetrieveHashAlgorithm(db_flags);
   shash::Any              hash           = RetrieveHashBlob(0, hash_algorithm);
-  if (RetrieveInt(2) == 1) {
-    hash.suffix = shash::kSuffixPartial;
-  }
 
   return hash;
+}
+
+shash::Md5 SqlListContentHashes::GetPathHash() const {
+  return RetrieveMd5(2, 3);
+}
+
+//------------------------------------------------------------------------------
+
+
+SqlListChunkHashes::SqlListChunkHashes(const CatalogDatabase &database) {
+  static const char *stmt_ge_2_4 = 
+      "SELECT md5path_1, md5path_2, hash FROM chunks "
+      "WHERE length(hash) > 0;";
+  //TODO(jpriessn): Do a dummy Init for < 2.4
+  if (database.schema_version() >= 2.4-CatalogDatabase::kSchemaEpsilon) {
+    DeferredInit(database.sqlite_db(), stmt_ge_2_4);
+  }
+}
+
+shash::Any SqlListChunkHashes::GetHash() const {
+  shash::Any hash = RetrieveHashBlob(2, shash::kAny);
+  hash.suffix = shash::kSuffixPartial;
+  return hash;
+}
+
+shash::Md5 SqlListChunkHashes::GetPathHash() const {
+  return RetrieveMd5(0, 1);
+}
+
+
+//------------------------------------------------------------------------------
+
+
+SqlListExternalPathHashes::SqlListExternalPathHashes(
+  const CatalogDatabase &database) {
+  static const char *stmt_ge_2_4 =
+      "SELECT md5path_1, md5path_2, flags, hash, 0 "
+      "  FROM catalog "
+      "  WHERE (length(catalog.hash) > 0) AND ((catalog.flags & 128) != 0);";
+  //TODO(jpriessn): Do a dummy Init for < 2.4
+  if (database.schema_version() >= 2.4-CatalogDatabase::kSchemaEpsilon) {
+    DeferredInit(database.sqlite_db(), stmt_ge_2_4);
+  }
+}
+
+shash::Md5 SqlListExternalPathHashes::GetPathHash() const {
+  return RetrieveMd5(0, 1);
 }
 
 

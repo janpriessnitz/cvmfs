@@ -276,6 +276,28 @@ class SqlListContentHashes : public SqlDirent {
  public:
   explicit SqlListContentHashes(const CatalogDatabase &database);
   shash::Any GetHash() const;
+  shash::Md5 GetPathHash() const;
+};
+
+
+//------------------------------------------------------------------------------
+
+
+class SqlListChunkHashes : public SqlDirent {
+ public:
+  explicit SqlListChunkHashes(const CatalogDatabase &database);
+  shash::Any GetHash() const;
+  shash::Md5 GetPathHash() const;
+};
+
+
+//------------------------------------------------------------------------------
+
+
+class SqlListExternalPathHashes : public SqlDirent {
+ public:
+  explicit SqlListExternalPathHashes(const CatalogDatabase &database);
+  shash::Md5 GetPathHash() const;
 };
 
 
