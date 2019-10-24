@@ -480,7 +480,7 @@ const Catalog::HashVector& Catalog::GetReferencedObjects() const {
   SmallHashDynamic<shash::Any, bool> hash_set;
   shash::Any empty_any;
   empty_any.SetNull();
-  hash_set.Init(64, empty_any, hash_set.hasher_any);
+  hash_set.Init(4096, empty_any, hash_set.hasher_any);
 
   // retrieve all referenced content hashes of files
   SqlListContentHashes list_content_hashes(database());
