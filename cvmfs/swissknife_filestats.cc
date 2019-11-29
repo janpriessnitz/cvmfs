@@ -62,25 +62,18 @@ int CommandFileStats::Main(const ArgumentList &args) {
                                                       tmp_dir,
                                                       download_manager(),
                                                       signature_manager());
-    success = Run(&fetcher);
+    success = Run(&fetcher, repo_name);
   } else {
     LocalObjectFetcher<> fetcher(repo_url, tmp_dir);
-    success = Run(&fetcher);
+    success = Run(&fetcher, repo_name);
   }
 
   return (success) ? 0 : 1;
 }
 
 template <class ObjectFetcherT>
-bool CommandFileStats::Run(ObjectFetcherT *object_fetcher)
+bool CommandFileStats::Run(ObjectFetcherT *object_fetcher, const std::string &reponame)
 {
-  atomic_init32(&finished_);
-
-  string abs_path = GetAbsolutePath(db_path_);
-  unlink(abs_path.c_str());
-  db_ = FileStatsDatabase::Create(db_path_);
-  db_->InitStatements();
-
   assert(MkdirDeep(tmp_db_path_, 0755));
 
   typename CatalogTraversal<ObjectFetcherT>::Parameters params;
@@ -88,24 +81,30 @@ bool CommandFileStats::Run(ObjectFetcherT *object_fetcher)
   CatalogTraversal<ObjectFetcherT> traversal(params);
   traversal.RegisterListener(&CommandFileStats::CatalogCallback, this);
 
-  pthread_create(&thread_processing_, NULL, MainProcessing, this);
+  const ReflogTN *reflog = FetchReflog(object_fetcher, reponame, shash::Any());
+  std::vector<shash::Any> catalogs;
+  if (NULL == reflog || !reflog->List(SqlReflog::kRefCatalog, &catalogs)) {
+    LogCvmfs(kLogGc, kLogStderr, "Failed to list catalog reference log");
+    return false;
+  }
 
   bool ret = traversal.Traverse();
 
-  atomic_inc32(&finished_);
-  pthread_join(thread_processing_, NULL);
-
-  db_->DestroyStatements();
+  bool success = true;
+        std::vector<shash::Any>::const_iterator i    = catalogs.begin();
+  const std::vector<shash::Any>::const_iterator iend = catalogs.end();
+  for (; i != iend && success; ++i) {
+    if(!FileExists(tmp_db_path_ + "/" + i->ToString()))
+      ret = ret && traversal_.TraverseRevision(*i);
+  }
 
   return ret;
 }
 
 void CommandFileStats::CatalogCallback(
   const CatalogTraversalData<catalog::Catalog> &data) {
-  int32_t num = atomic_read32(&num_downloaded_);
-  string out_path =  tmp_db_path_ + StringifyInt(num + 1) + ".db";
+  string out_path =  tmp_db_path_ + "/" + data.catalog_hash.ToString();
   assert(CopyPath2Path(data.catalog->database_path(), out_path));
-  atomic_inc32(&num_downloaded_);
 }
 
 void *CommandFileStats::MainProcessing(void *data) {

@@ -74,7 +74,7 @@ class CommandFileStats : public Command {
   atomic_int32 finished_;
 
   template <class ObjectFetcherT>
-  bool Run(ObjectFetcherT *object_fetcher);
+  bool Run(ObjectFetcherT *object_fetcher, const std::string &reponame);
 
   void CatalogCallback(const CatalogTraversalData<catalog::Catalog> &data);
 

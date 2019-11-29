@@ -191,13 +191,13 @@ class AbstractObjectFetcher : public ObjectFetcherFailures {
       return failure;
     }
 
-    // Ensure data integrity
-    shash::Any computed_hash(reflog_hash.algorithm);
-    ReflogTN::HashDatabase(tmp_path, &computed_hash);
-    if (computed_hash != reflog_hash) {
-      unlink(tmp_path.c_str());
-      return kFailBadData;
-    }
+    // // Ensure data integrity
+    // shash::Any computed_hash(reflog_hash.algorithm);
+    // ReflogTN::HashDatabase(tmp_path, &computed_hash);
+    // if (computed_hash != reflog_hash) {
+    //   unlink(tmp_path.c_str());
+    //   return kFailBadData;
+    // }
 
     *reflog = ReflogTN::Open(tmp_path);
     if (NULL == *reflog) {
