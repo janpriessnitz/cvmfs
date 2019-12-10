@@ -387,6 +387,7 @@ set (CVMFS_SWISSKNIFE_SOURCES
   swissknife.cc
   swissknife_assistant.cc
   swissknife_capabilities.cc
+  swissknife_catalog_stats.cc
   swissknife_check.cc
   swissknife_diff.cc
   swissknife_diff_tool.cc

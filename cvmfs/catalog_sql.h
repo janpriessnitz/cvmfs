@@ -305,6 +305,12 @@ class SqlLookup : public SqlDirent {
    * @return the MD5 parent path hash of a freshly performed lookup
    */
   shash::Md5 GetParentPathHash() const;
+  
+  /**
+   * Retrieves a unique hash of the directory entry.
+   * @return the SHA256 hash of the directory entry
+   */
+  shash::Any GetDirentHash(const Catalog *catalog) const;
 };
 
 
@@ -314,6 +320,15 @@ class SqlLookup : public SqlDirent {
 class SqlListing : public SqlLookup {
  public:
   explicit SqlListing(const CatalogDatabase &database);
+};
+
+
+//------------------------------------------------------------------------------
+
+
+class SqlDirListing : public SqlLookup {
+ public:
+  explicit SqlDirListing(const CatalogDatabase &database);
   bool BindPathHash(const struct shash::Md5 &hash);
 };
 

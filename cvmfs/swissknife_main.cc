@@ -12,6 +12,7 @@
 #include "statistics_database.h"
 #include "swissknife.h"
 
+#include "swissknife_catalog_stats.h"
 #include "swissknife_check.h"
 #include "swissknife_diff.h"
 #include "swissknife_filestats.h"
@@ -111,6 +112,7 @@ int main(int argc, char **argv) {
   command_list.push_back(new swissknife::Ingest());
   command_list.push_back(new swissknife::CommandNotify());
   command_list.push_back(new swissknife::CommandFileStats());
+  command_list.push_back(new swissknife::CommandCatalogStats());
 
   if (argc < 2) {
     Usage();
