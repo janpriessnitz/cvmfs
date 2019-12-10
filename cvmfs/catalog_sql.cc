@@ -672,6 +672,28 @@ shash::Md5 SqlLookup::GetParentPathHash() const {
 }
 
 
+shash::Any SqlLookup::GetDirentHash(const Catalog *catalog) const {
+  shash::Any result;
+  result.algorithm = shash::kSha1;
+  std::string inp_string;
+  DirectoryEntry dirent = GetDirent(catalog);
+
+  inp_string = GetPathHash().ToString() + ",";
+  inp_string += dirent.name_.ToString() + ",";
+  inp_string += StringifyUint(dirent.mode_) + ",";
+  inp_string += StringifyUint(dirent.mode_) + ",";
+  inp_string += StringifyInt(dirent.uid_) + ",";
+  inp_string += StringifyInt(dirent.gid_) + ",";
+  inp_string += StringifyUint(dirent.size_) + ",";
+  inp_string += StringifyUint(dirent.mtime_) + ",";
+  inp_string += dirent.symlink_.ToString() + ",";
+  inp_string += dirent.checksum_.ToString() + ",";
+
+  shash::HashString(inp_string, &result);
+  return result;
+}
+
+
 /**
  * This method is a friend of DirectoryEntry.
  */
@@ -738,13 +760,22 @@ DirectoryEntry SqlLookup::GetDirent(const Catalog *catalog,
 
 
 SqlListing::SqlListing(const CatalogDatabase &database) {
+  MAKE_STATEMENTS("SELECT @DB_FIELDS@ FROM catalog;");
+  DEFERRED_INITS(database);
+}
+
+
+//------------------------------------------------------------------------------
+
+
+SqlDirListing::SqlDirListing(const CatalogDatabase &database) {
   MAKE_STATEMENTS("SELECT @DB_FIELDS@ FROM catalog "
                   "WHERE (parent_1 = :p_1) AND (parent_2 = :p_2);");
   DEFERRED_INITS(database);
 }
 
 
-bool SqlListing::BindPathHash(const struct shash::Md5 &hash) {
+bool SqlDirListing::BindPathHash(const struct shash::Md5 &hash) {
   return BindMd5(1, 2, hash);
 }
 
