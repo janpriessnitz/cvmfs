@@ -113,7 +113,7 @@ bool CommandCatalogStats::Run(ObjectFetcherT *object_fetcher,
   typename CatalogTraversal<ObjectFetcherT>::Parameters params;
   params.object_fetcher = object_fetcher;
   params.no_repeat_history = true;
-  CatalogTraversal<ObjectFetcherT> traversal(params);
+  CatalogTraversalParallel<ObjectFetcherT> traversal(params);
   traversal.RegisterListener(&CommandCatalogStats::ProcessCatalog<ObjectFetcherT>, this);
 
   typename manifest::Reflog *reflog;
@@ -142,7 +142,7 @@ bool CommandCatalogStats::Run(ObjectFetcherT *object_fetcher,
 }
 
 template <class ObjectFetcherT>
-void CommandCatalogStats::ProcessCatalog(const typename CatalogTraversal<ObjectFetcherT>::CallbackDataTN &data) {
+void CommandCatalogStats::ProcessCatalog(const typename CatalogTraversalParallel<ObjectFetcherT>::CallbackDataTN &data) {
   CatalogHashSet *cur_hash_set = new CatalogHashSet;
   std::string cur_mountpoint = data.catalog->mountpoint().ToString();
   cur_hash_set->revision = data.catalog->revision();

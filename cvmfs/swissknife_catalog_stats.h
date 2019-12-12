@@ -8,6 +8,7 @@
 #include <pthread.h>
 
 #include "catalog_traversal.h"
+#include "catalog_traversal_parallel.h"
 #include "hash.h"
 #include "smallhash.h"
 
@@ -110,7 +111,7 @@ class CommandCatalogStats : public Command {
   }
 
   template <class ObjectFetcherT>
-  void ProcessCatalog(const typename CatalogTraversal<ObjectFetcherT>::CallbackDataTN &data);
+  void ProcessCatalog(const typename CatalogTraversalParallel<ObjectFetcherT>::CallbackDataTN &data);
   std::string PrintResults(uint64_t root_revision);
 
   std::string repo_name_;
