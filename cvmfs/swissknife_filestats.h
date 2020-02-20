@@ -28,7 +28,7 @@ class FileStatsDatabase : public sqlite::Database<FileStatsDatabase> {
   // Following Store* functions return the primary key value of the
   // inserted entry
   int64_t StoreCatalog(int64_t num_entries, int64_t file_size);
-  int64_t StoreFile(int64_t catalog_id, int64_t object_id);
+  int64_t StoreFile(int64_t catalog_id, int64_t object_id, std::string name);
   int64_t StoreObject(const void *hash, int hash_size, int64_t size);
   int64_t StoreChunkedFile(int64_t catalog_id);
   int64_t StoreChunk(const void *hash, int hash_size, int64_t size,

@@ -150,7 +150,7 @@ void CommandFileStats::ProcessCatalog(string db_path) {
 
   sqlite::Sql *catalog_list =
     new sqlite::Sql(cat_db->sqlite_db(),
-                    "SELECT hash, size, flags, symlink FROM catalog;");
+                    "SELECT hash, size, flags, symlink, name FROM catalog;");
   sqlite::Sql *chunks_list =
     new sqlite::Sql(cat_db->sqlite_db(),
                     "SELECT md5path_1, md5path_2, size, hash FROM chunks "
@@ -161,10 +161,14 @@ void CommandFileStats::ProcessCatalog(string db_path) {
     int num_bytes = catalog_list->RetrieveBytes(0);
     int64_t size = catalog_list->RetrieveInt64(1);
     int flags = catalog_list->RetrieveInt(2);
+    const char *name_ptr = (const char *) catalog_list->RetrieveText(4);
+    std::string name(name_ptr);
     if ((flags & catalog::SqlDirent::kFlagFile) ==
-         catalog::SqlDirent::kFlagFile) {
+         catalog::SqlDirent::kFlagFile && 
+         (flags & 12) != 12 &&
+         (flags & 64) != 64) {
       int object_id = db_->StoreObject(hash, num_bytes, size);
-      db_->StoreFile(cur_catalog_id, object_id);
+      db_->StoreFile(cur_catalog_id, object_id, name);
     } else if ((flags & catalog::SqlDirent::kFlagLink) ==
                 catalog::SqlDirent::kFlagLink) {
       int symlink_length = catalog_list->RetrieveBytes(3);
@@ -218,6 +222,7 @@ bool FileStatsDatabase::CreateEmptyDatabase() {
     "CREATE TABLE files ("
     "file_id INTEGER PRIMARY KEY,"
     "catalog_id INTEGER,"
+    "name TEXT,"
     "FOREIGN KEY (catalog_id) REFERENCES catalogs (catalog_id)"
     ");").Execute();
   ret &= sqlite::Sql(sqlite_db(),
@@ -242,7 +247,7 @@ void FileStatsDatabase::InitStatements() {
   query_insert_object = new sqlite::Sql(sqlite_db(),
     "INSERT INTO objects (hash, size) VALUES (:hash, :size);");
   query_insert_file = new sqlite::Sql(sqlite_db(),
-    "INSERT INTO files (catalog_id) VALUES (:catalog);");
+    "INSERT INTO files (catalog_id, name) VALUES (:catalog, :name);");
   query_insert_file_object = new sqlite::Sql(sqlite_db(),
     "INSERT INTO files_objects (file_id, object_id) VALUES (:file, :object);");
   query_insert_symlink = new sqlite::Sql(sqlite_db(),
@@ -269,9 +274,10 @@ int64_t FileStatsDatabase::StoreCatalog(int64_t num_entries,
   return sqlite3_last_insert_rowid(sqlite_db());
 }
 
-int64_t FileStatsDatabase::StoreFile(int64_t catalog_id, int64_t object_id) {
+int64_t FileStatsDatabase::StoreFile(int64_t catalog_id, int64_t object_id, std::string name) {
   query_insert_file->Reset();
   query_insert_file->BindInt64(1, catalog_id);
+  query_insert_file->BindText(2, name.c_str());
   query_insert_file->Execute();
   int file_id = sqlite3_last_insert_rowid(sqlite_db());
 
