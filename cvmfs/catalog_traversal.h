@@ -447,7 +447,7 @@ class CatalogTraversal
       CatalogJob job = Pop(ctx);
 
       // download and open the catalog for processing
-      if (!PrepareCatalog(*ctx, &job)) {
+      if (!PrepareCatalog(&job)) {
         return false;
       }
 
@@ -478,7 +478,7 @@ class CatalogTraversal
   }
 
 
-  bool PrepareCatalog(const TraversalContext &ctx, CatalogJob *job) {
+  bool PrepareCatalog(CatalogJob *job) {
     // skipping duplicate catalogs might also yield postponed catalogs
     if (ShouldBeSkipped(*job)) {
       job->ignore = true;
@@ -807,6 +807,7 @@ class CatalogTraversal
     return no_repeat_history_ && (visited_catalogs_.count(job.hash) > 0);
   }
 
+ protected:
   shash::Any GetRepositoryRootCatalogHash() {
     // get the manifest of the repository to learn about the entry point or the
     // root catalog of the repository to be traversed
@@ -824,8 +825,9 @@ class CatalogTraversal
     return manifest->catalog_hash();
   }
 
- private:
   ObjectFetcherT         *object_fetcher_;
+
+ private:
   CatalogTraversalInfoShim<CatalogTN> catalog_info_default_shim_;
   CatalogTraversalInfoShim<CatalogTN> *catalog_info_shim_;
   const bool              no_close_;

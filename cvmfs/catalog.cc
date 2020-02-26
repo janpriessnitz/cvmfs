@@ -71,6 +71,7 @@ Catalog::Catalog(const PathString &mountpoint,
   uid_map_ = NULL;
   gid_map_ = NULL;
   sql_listing_ = NULL;
+  sql_dir_listing_ = NULL;
   sql_lookup_md5path_ = NULL;
   sql_lookup_nested_ = NULL;
   sql_list_nested_ = NULL;
@@ -97,6 +98,7 @@ Catalog::~Catalog() {
  */
 void Catalog::InitPreparedStatements() {
   sql_listing_          = new SqlListing(database());
+  sql_dir_listing_      = new SqlDirListing(database());
   sql_lookup_md5path_   = new SqlLookupPathHash(database());
   sql_lookup_nested_    = new SqlNestedCatalogLookup(database());
   sql_list_nested_      = new SqlNestedCatalogListing(database());
@@ -112,6 +114,7 @@ void Catalog::FinalizePreparedStatements() {
   delete sql_chunks_listing_;
   delete sql_all_chunks_;
   delete sql_listing_;
+  delete sql_dir_listing_;
   delete sql_lookup_md5path_;
   delete sql_lookup_nested_;
   delete sql_list_nested_;
@@ -361,6 +364,27 @@ bool Catalog::LookupXattrsMd5Path(
 
 
 /**
+ * Perform a listing of dirent hashes in the whole catalog.
+ * @param hash_list will be set to the dirent hash listing
+ * @return true on successful listing, false otherwise
+ */
+bool Catalog::HashListing(std::vector<shash::Any> *hash_list) const
+{
+  assert(IsInitialized());
+
+  MutexLockGuard m(lock_);
+
+  while (sql_listing_->FetchRow()) {
+    shash::Any hash = sql_listing_->GetDirentHash(this);
+    hash_list->push_back(hash);
+  }
+  sql_listing_->Reset();
+
+  return true;
+}
+
+
+/**
  * Perform a listing of the directory with the given MD5 path hash.
  * @param path_hash the MD5 hash of the path of the directory to list
  * @param listing will be set to the resulting DirectoryEntryList
@@ -375,9 +399,9 @@ bool Catalog::ListingMd5PathStat(const shash::Md5 &md5path,
   StatEntry entry;
 
   MutexLockGuard m(lock_);
-  sql_listing_->BindPathHash(md5path);
-  while (sql_listing_->FetchRow()) {
-    dirent = sql_listing_->GetDirent(this);
+  sql_dir_listing_->BindPathHash(md5path);
+  while (sql_dir_listing_->FetchRow()) {
+    dirent = sql_dir_listing_->GetDirent(this);
     if (dirent.IsHidden())
       continue;
     FixTransitionPoint(md5path, &dirent);
@@ -385,7 +409,7 @@ bool Catalog::ListingMd5PathStat(const shash::Md5 &md5path,
     entry.info = dirent.GetStatStructure();
     listing->PushBack(entry);
   }
-  sql_listing_->Reset();
+  sql_dir_listing_->Reset();
 
   return true;
 }
@@ -407,13 +431,13 @@ bool Catalog::ListingMd5Path(const shash::Md5 &md5path,
 
   MutexLockGuard m(lock_);
 
-  sql_listing_->BindPathHash(md5path);
-  while (sql_listing_->FetchRow()) {
-    DirectoryEntry dirent = sql_listing_->GetDirent(this, expand_symlink);
+  sql_dir_listing_->BindPathHash(md5path);
+  while (sql_dir_listing_->FetchRow()) {
+    DirectoryEntry dirent = sql_dir_listing_->GetDirent(this, expand_symlink);
     FixTransitionPoint(md5path, &dirent);
     listing->push_back(dirent);
   }
-  sql_listing_->Reset();
+  sql_dir_listing_->Reset();
 
   return true;
 }

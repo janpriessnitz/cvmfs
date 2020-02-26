@@ -129,6 +129,7 @@ class Catalog : SingleCopy {
     return LookupXattrsMd5Path(NormalizePath(path), xattrs);
   }
 
+  bool HashListing(std::vector<shash::Any> *hash_list) const;
   inline bool ListingPath(const PathString &path,
                           DirectoryEntryList *listing,
                           const bool expand_symlink = true) const
@@ -326,6 +327,7 @@ class Catalog : SingleCopy {
   const OwnerMap *gid_map_;
 
   SqlListing                  *sql_listing_;
+  SqlDirListing               *sql_dir_listing_;
   SqlLookupPathHash           *sql_lookup_md5path_;
   SqlNestedCatalogLookup      *sql_lookup_nested_;
   SqlNestedCatalogListing     *sql_list_nested_;
