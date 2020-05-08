@@ -1618,16 +1618,19 @@ loader::CvmfsExports *g_cvmfs_exports = NULL;
  */
 
 class ExpiresMagicXattr : public BaseMagicXattr {
-  virtual bool PrepareValueFenced() { return true; }
+  time_t catalogs_valid_until_;
+
+  virtual bool PrepareValueFenced() {
+    catalogs_valid_until_ = cvmfs::fuse_remounter_->catalogs_valid_until();
+    return true;
+  }
+
   virtual std::string GetValue() {
-    if (cvmfs::fuse_remounter_->catalogs_valid_until() ==
-        MountPoint::kIndefiniteDeadline)
-    {
+    if (catalogs_valid_until_ == MountPoint::kIndefiniteDeadline) {
       return "never (fixed root catalog)";
     } else {
       time_t now = time(NULL);
-      return StringifyInt(
-        (cvmfs::fuse_remounter_->catalogs_valid_until() - now) / 60);
+      return StringifyInt( (catalogs_valid_until_ - now) / 60);
     }
   }
 };

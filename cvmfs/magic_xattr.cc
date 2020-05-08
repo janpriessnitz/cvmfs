@@ -551,8 +551,6 @@ std::string UsedFdMagicXattr::GetValue() {
   return n_used_fd_;
 }
 
-// TODO: no_open_dirs_ counter is not incremented anywhere
-
 bool UsedDirPMagicXattr::PrepareValueFenced() {
   n_used_dirp_ = mount_point_->file_system()->no_open_dirs()->ToString();
   return true;
